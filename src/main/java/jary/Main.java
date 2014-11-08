@@ -4,15 +4,17 @@ import SimpleOpenNI.SimpleOpenNI;
 import processing.core.PApplet;
 import processing.core.PImage;
 import processing.core.PVector;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 
 public class Main extends PApplet {
 
     // create kinect object
-    SimpleOpenNI  kinect;
+    SimpleOpenNI kinect;
     // image storage from kinect
     PImage kinectDepth;
     // int of each user being  tracked
@@ -32,18 +34,32 @@ public class Main extends PApplet {
     // vector of tracked head for confidence checking
     PVector confidenceVector = new PVector();
 
+    private CountDownLatch publishLatch = new CountDownLatch(1);
+
+    protected JedisPoolConfig poolConfig;
+    protected JedisPool jedisPool;
+    protected Jedis publisher;
+
     public static void main(String args[]) {
-        PApplet.main(new String[] { "--present", "jary.Main" });
+
+        PApplet.main(new String[]{"--present", "jary.Main"});
     }
-
-
 
     /*---------------------------------------------------------------
     Starts new kinect object and enables skeleton tracking.
     Draws window
     ----------------------------------------------------------------*/
-    public void setup()
-    {
+    public void setup() {
+
+        poolConfig = new JedisPoolConfig();
+        jedisPool = new JedisPool(poolConfig, "172.31.253.53", 6379, 0);
+        publisher = jedisPool.getResource();
+
+        System.out.println("Connection to server sucessfully");
+        //check whether server is running or not
+        System.out.println("Server is running: " + publisher.ping());
+
+
         // start a new kinect object
         kinect = new SimpleOpenNI(this);
 
@@ -66,30 +82,27 @@ public class Main extends PApplet {
     Updates Kinect. Gets users tracking and draws skeleton and
     head if confidence of tracking is above threshold
     ----------------------------------------------------------------*/
-    public void draw(){
+    public void draw() {
         // update the camera
         kinect.update();
         // get Kinect data
         kinectDepth = kinect.depthImage();
         // draw depth image at coordinates (0,0)
-        image(kinectDepth,0,0);
+        image(kinectDepth, 0, 0);
 
         // get all user IDs of tracked users
         userID = kinect.getUsers();
 
         // loop through each user to see if tracking
-        for(int i=0;i<userID.length;i++)
-        {
+        for (int i = 0; i < userID.length; i++) {
             // if Kinect is tracking certain user then get joint vectors
-            if(kinect.isTrackingSkeleton(userID[i]))
-            {
+            if (kinect.isTrackingSkeleton(userID[i])) {
                 // get confidence level that Kinect is tracking head
                 confidence = kinect.getJointPositionSkeleton(userID[i],
-                        SimpleOpenNI.SKEL_HEAD,confidenceVector);
+                        SimpleOpenNI.SKEL_HEAD, confidenceVector);
 
                 // if confidence of tracking is beyond threshold, then track user
-                if(confidence > confidenceLevel)
-                {
+                if (confidence > confidenceLevel) {
                     // change draw color based on hand id#
                     stroke(0, 0, 255);
                     // fill the ellipse with the same color
@@ -105,19 +118,19 @@ public class Main extends PApplet {
     /*---------------------------------------------------------------
     Draw the skeleton of a tracked user.  Input is userID
     ----------------------------------------------------------------*/
-    public void drawSkeleton(int userId){
+    public void drawSkeleton(int userId) {
 
         // get 3D position of head
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD,headPosition);
+        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD, headPosition);
 
         // convert real world point to projective space
-        kinect.convertRealWorldToProjective(headPosition,headPosition);
+        kinect.convertRealWorldToProjective(headPosition, headPosition);
 
         // create a distance scalar related to the depth in z dimension
-        distanceScalar = (525/headPosition.z);
+        distanceScalar = (525 / headPosition.z);
 
         // draw the circle at the position of the head with the head size scaled by the distance scalar
-        ellipse(headPosition.x,headPosition.y, distanceScalar*headSize,distanceScalar*headSize);
+        ellipse(headPosition.x, headPosition.y, distanceScalar * headSize, distanceScalar * headSize);
 
 
         HashMap<String, PVector> skelVectors = new HashMap<>();
@@ -154,57 +167,41 @@ public class Main extends PApplet {
         kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, skelVectors.get("SKEL_RIGHT_KNEE"));
         kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_FOOT, skelVectors.get("SKEL_RIGHT_FOOT"));
 
+        String payload = "{ \"timestamp\": " + System.currentTimeMillis() + ", " +
+                "\"points\": { " +
+                "\"head\": " + skelVectors.get("SKEL_HEAD") + ", " +
+                "\"neck\": " + skelVectors.get("SKEL_NECK") + ", " +
+                "\"left_shoulder\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"left_elbow\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"left_hand\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"right_shoulder\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"right_elbow\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"right_hand\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"torso\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"left_hip\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"left_knee\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"left_foot\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"right_hip\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"right_knee\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
+                "\"right_foot\": " + skelVectors.get("SKEL_LEFT_SHOULDER") +
+                "} }";
 
-        Iterator it = skelVectors.entrySet().iterator();
-        while (it.hasNext()) {
+       publisher.publish("dancer-state", payload);
 
-            Map.Entry pairs = (Map.Entry)it.next();
-            System.out.println(pairs.getKey() + " = " + pairs.getValue());
-        }
-
-        //draw limb from head to neck
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_HEAD, SimpleOpenNI.SKEL_NECK);
-
-        //draw limb from neck to left shoulder
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_LEFT_SHOULDER);
-
-        //draw limb from left shoulde to left elbow
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_LEFT_ELBOW);
-
-        //draw limb from left elbow to left hand
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_LEFT_ELBOW, SimpleOpenNI.SKEL_LEFT_HAND);
-
-        //draw limb from neck to right shoulder
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_RIGHT_SHOULDER);
-
-        //draw limb from right shoulder to right elbow
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_RIGHT_ELBOW);
-
-        //draw limb from right elbow to right hand
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_ELBOW, SimpleOpenNI.SKEL_RIGHT_HAND);
-
-        //draw limb from left shoulder to torso
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
-
-        //draw limb from right shoulder to torso
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, SimpleOpenNI.SKEL_TORSO);
-
-        //draw limb from torso to left hip
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_LEFT_HIP);
-
-        //draw limb from left hip to left knee
-        kinect.drawLimb(userId, SimpleOpenNI.SKEL_LEFT_HIP,  SimpleOpenNI.SKEL_LEFT_KNEE);
-
-        //draw limb from left knee to left foot
+        kinect.drawLimb(userId, SimpleOpenNI.SKEL_LEFT_HIP, SimpleOpenNI.SKEL_LEFT_KNEE);
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_LEFT_KNEE, SimpleOpenNI.SKEL_LEFT_FOOT);
-
-        //draw limb from torse to right hip
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_RIGHT_HIP);
-
-        //draw limb from right hip to right knee
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_HIP, SimpleOpenNI.SKEL_RIGHT_KNEE);
-
-        //draw limb from right kneee to right foot
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, SimpleOpenNI.SKEL_RIGHT_FOOT);
     }
 
@@ -212,7 +209,7 @@ public class Main extends PApplet {
     When a new user is found, print new user detected along with
     userID and start pose detection.  Input is userID
     ----------------------------------------------------------------*/
-    public void onNewUser(SimpleOpenNI curContext, int userId){
+    public void onNewUser(SimpleOpenNI curContext, int userId) {
         println("New User Detected - userId: " + userId);
         // start tracking of user id
         curContext.startTrackingSkeleton(userId);
@@ -221,7 +218,7 @@ public class Main extends PApplet {
     /*---------------------------------------------------------------
     Print when user is lost. Input is int userId of user lost
     ----------------------------------------------------------------*/
-    public void onLostUser(SimpleOpenNI curContext, int userId){
+    public void onLostUser(SimpleOpenNI curContext, int userId) {
         // print user lost and user id
         println("User Lost - userId: " + userId);
     }
@@ -230,7 +227,7 @@ public class Main extends PApplet {
     /*---------------------------------------------------------------
     Called when a user is tracked.
     ----------------------------------------------------------------*/
-    public void onVisibleUser(SimpleOpenNI curContext, int userId){
+    public void onVisibleUser(SimpleOpenNI curContext, int userId) {
     }
 
 
