@@ -8,6 +8,7 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.concurrent.CountDownLatch;
 
@@ -40,6 +41,8 @@ public class Main extends PApplet {
     protected JedisPool jedisPool;
     protected Jedis publisher;
 
+    protected long lastImageTaken;
+
     public static void main(String args[]) {
 
         PApplet.main(new String[]{"--present", "jary.Main"});
@@ -51,14 +54,16 @@ public class Main extends PApplet {
     ----------------------------------------------------------------*/
     public void setup() {
 
+        lastImageTaken = System.currentTimeMillis();
+
         poolConfig = new JedisPoolConfig();
-        jedisPool = new JedisPool(poolConfig, "172.31.253.53", 6379, 0);
+//        jedisPool = new JedisPool(poolConfig, "172.31.253.53", 6379, 0);
+        jedisPool = new JedisPool(poolConfig, "localhost", 6379, 0);
         publisher = jedisPool.getResource();
 
         System.out.println("Connection to server sucessfully");
         //check whether server is running or not
         System.out.println("Server is running: " + publisher.ping());
-
 
         // start a new kinect object
         kinect = new SimpleOpenNI(this);
@@ -167,7 +172,8 @@ public class Main extends PApplet {
         kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, skelVectors.get("SKEL_RIGHT_KNEE"));
         kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_FOOT, skelVectors.get("SKEL_RIGHT_FOOT"));
 
-        String payload = "{ \"timestamp\": " + System.currentTimeMillis() + ", " +
+        long currentTime = System.currentTimeMillis();
+        String payload = "{ \"timestamp\": " + currentTime + ", " +
                 "\"points\": { " +
                 "\"head\": " + skelVectors.get("SKEL_HEAD") + ", " +
                 "\"neck\": " + skelVectors.get("SKEL_NECK") + ", " +
@@ -186,7 +192,12 @@ public class Main extends PApplet {
                 "\"right_foot\": " + skelVectors.get("SKEL_LEFT_SHOULDER") +
                 "} }";
 
-       publisher.publish("dancer-state", payload);
+        publisher.publish("dancer-state", payload);
+
+        if (currentTime - lastImageTaken >= 5000) {
+            publisher.publish("dancer-image", Arrays.toString(kinect.depthImage().pixels));
+            lastImageTaken = currentTime;
+        }
 
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_HEAD, SimpleOpenNI.SKEL_NECK);
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_LEFT_SHOULDER);
@@ -222,7 +233,6 @@ public class Main extends PApplet {
         // print user lost and user id
         println("User Lost - userId: " + userId);
     }
-
 
     /*---------------------------------------------------------------
     Called when a user is tracked.
