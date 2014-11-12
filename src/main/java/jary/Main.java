@@ -1,6 +1,9 @@
 package jary;
 
 import SimpleOpenNI.SimpleOpenNI;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import processing.core.PApplet;
 import processing.core.PImage;
 import processing.core.PVector;
@@ -10,32 +13,37 @@ import redis.clients.jedis.JedisPoolConfig;
 
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.concurrent.CountDownLatch;
 
 public class Main extends PApplet {
 
+    ThreadPoolTaskExecutor taskExecutor;
+
     // create kinect object
     SimpleOpenNI kinect;
+
     // image storage from kinect
     PImage kinectDepth;
+
     // int of each user being  tracked
     int[] userID;
 
     // postion of head to draw circle
     PVector headPosition = new PVector();
+
     // turn headPosition into scalar form
     float distanceScalar;
+
     // diameter of head drawn in pixels
     float headSize = 200;
 
     // threshold of level of confidence
     float confidenceLevel = Float.parseFloat("0.5");
+
     // the current confidence level that the kinect is tracking
     float confidence;
+
     // vector of tracked head for confidence checking
     PVector confidenceVector = new PVector();
-
-    private CountDownLatch publishLatch = new CountDownLatch(1);
 
     protected JedisPoolConfig poolConfig;
     protected JedisPool jedisPool;
@@ -54,11 +62,14 @@ public class Main extends PApplet {
     ----------------------------------------------------------------*/
     public void setup() {
 
+        ApplicationContext context = new ClassPathXmlApplicationContext("spring.xml");
+        taskExecutor = (ThreadPoolTaskExecutor) context.getBean("taskExecutor");
+
         lastImageTaken = System.currentTimeMillis();
 
         poolConfig = new JedisPoolConfig();
-//        jedisPool = new JedisPool(poolConfig, "172.31.253.53", 6379, 0);
-        jedisPool = new JedisPool(poolConfig, "localhost", 6379, 0);
+        jedisPool = new JedisPool(poolConfig, "172.31.253.53", 6379, 0);
+//        jedisPool = new JedisPool(poolConfig, "localhost", 6379, 0);
         publisher = jedisPool.getResource();
 
         System.out.println("Connection to server sucessfully");
@@ -137,68 +148,6 @@ public class Main extends PApplet {
         // draw the circle at the position of the head with the head size scaled by the distance scalar
         ellipse(headPosition.x, headPosition.y, distanceScalar * headSize, distanceScalar * headSize);
 
-
-        HashMap<String, PVector> skelVectors = new HashMap<>();
-
-        skelVectors.put("SKEL_HEAD", new PVector());
-        skelVectors.put("SKEL_NECK", new PVector());
-        skelVectors.put("SKEL_LEFT_SHOULDER", new PVector());
-        skelVectors.put("SKEL_LEFT_ELBOW", new PVector());
-        skelVectors.put("SKEL_LEFT_HAND", new PVector());
-        skelVectors.put("SKEL_RIGHT_SHOULDER", new PVector());
-        skelVectors.put("SKEL_RIGHT_ELBOW", new PVector());
-        skelVectors.put("SKEL_RIGHT_HAND", new PVector());
-        skelVectors.put("SKEL_TORSO", new PVector());
-        skelVectors.put("SKEL_LEFT_HIP", new PVector());
-        skelVectors.put("SKEL_LEFT_KNEE", new PVector());
-        skelVectors.put("SKEL_LEFT_FOOT", new PVector());
-        skelVectors.put("SKEL_RIGHT_HIP", new PVector());
-        skelVectors.put("SKEL_RIGHT_KNEE", new PVector());
-        skelVectors.put("SKEL_RIGHT_FOOT", new PVector());
-
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD, skelVectors.get("SKEL_HEAD"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_NECK, skelVectors.get("SKEL_NECK"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, skelVectors.get("SKEL_LEFT_SHOULDER"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_ELBOW, skelVectors.get("SKEL_LEFT_ELBOW"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_HAND, skelVectors.get("SKEL_LEFT_HAND"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, skelVectors.get("SKEL_RIGHT_SHOULDER"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_ELBOW, skelVectors.get("SKEL_RIGHT_ELBOW"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_HAND, skelVectors.get("SKEL_RIGHT_HAND"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_TORSO, skelVectors.get("SKEL_TORSO"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_HIP, skelVectors.get("SKEL_LEFT_HIP"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_KNEE, skelVectors.get("SKEL_LEFT_KNEE"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_FOOT, skelVectors.get("SKEL_LEFT_FOOT"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_HIP, skelVectors.get("SKEL_RIGHT_HIP"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, skelVectors.get("SKEL_RIGHT_KNEE"));
-        kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_FOOT, skelVectors.get("SKEL_RIGHT_FOOT"));
-
-        long currentTime = System.currentTimeMillis();
-        String payload = "{ \"timestamp\": " + currentTime + ", " +
-                "\"points\": { " +
-                "\"head\": " + skelVectors.get("SKEL_HEAD") + ", " +
-                "\"neck\": " + skelVectors.get("SKEL_NECK") + ", " +
-                "\"left_shoulder\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"left_elbow\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"left_hand\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"right_shoulder\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"right_elbow\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"right_hand\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"torso\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"left_hip\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"left_knee\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"left_foot\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"right_hip\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"right_knee\": " + skelVectors.get("SKEL_LEFT_SHOULDER") + ", " +
-                "\"right_foot\": " + skelVectors.get("SKEL_LEFT_SHOULDER") +
-                "} }";
-
-        publisher.publish("dancer-state", payload);
-
-        if (currentTime - lastImageTaken >= 5000) {
-            publisher.publish("dancer-image", Arrays.toString(kinect.depthImage().pixels));
-            lastImageTaken = currentTime;
-        }
-
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_HEAD, SimpleOpenNI.SKEL_NECK);
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_NECK, SimpleOpenNI.SKEL_LEFT_SHOULDER);
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, SimpleOpenNI.SKEL_LEFT_ELBOW);
@@ -214,6 +163,16 @@ public class Main extends PApplet {
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_TORSO, SimpleOpenNI.SKEL_RIGHT_HIP);
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_HIP, SimpleOpenNI.SKEL_RIGHT_KNEE);
         kinect.drawLimb(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, SimpleOpenNI.SKEL_RIGHT_FOOT);
+
+        long currentTime = System.currentTimeMillis();
+
+        // publish skeleton joints info
+        taskExecutor.execute(new PublishRunnable(userId, currentTime));
+
+        // publish heat map image
+//        if (currentTime - lastImageTaken >= 5000) {
+//            taskExecutor.execute(new PublishImageRunnable(currentTime));
+//        }
     }
 
     /*---------------------------------------------------------------
@@ -240,5 +199,88 @@ public class Main extends PApplet {
     public void onVisibleUser(SimpleOpenNI curContext, int userId) {
     }
 
+    protected class PublishRunnable implements Runnable {
 
+        protected Integer userId;
+        protected HashMap<String, PVector> skelVectors = new HashMap<>();
+        protected Long currentTime;
+
+        public PublishRunnable(Integer userId, Long currentTime) {
+
+            this.userId = userId;
+            this.currentTime = currentTime;
+
+            skelVectors.put("head", new PVector());
+            skelVectors.put("neck", new PVector());
+            skelVectors.put("left_shoulder", new PVector());
+            skelVectors.put("left_elbow", new PVector());
+            skelVectors.put("left_hand", new PVector());
+            skelVectors.put("right_shoulder", new PVector());
+            skelVectors.put("right_elbow", new PVector());
+            skelVectors.put("right_hand", new PVector());
+            skelVectors.put("torso", new PVector());
+            skelVectors.put("left_hip", new PVector());
+            skelVectors.put("left_knee", new PVector());
+            skelVectors.put("left_foot", new PVector());
+            skelVectors.put("right_hip", new PVector());
+            skelVectors.put("right_knee", new PVector());
+            skelVectors.put("right_foot", new PVector());
+        }
+
+        @Override
+        public void run() {
+
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD, skelVectors.get("head"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_NECK, skelVectors.get("neck"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, skelVectors.get("left_shoulder"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_ELBOW, skelVectors.get("left_elbow"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_HAND, skelVectors.get("left_hand"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_SHOULDER, skelVectors.get("right_shoulder"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_ELBOW, skelVectors.get("right_elbow"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_HAND, skelVectors.get("right_hand"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_TORSO, skelVectors.get("torso"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_HIP, skelVectors.get("left_hip"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_KNEE, skelVectors.get("left_knee"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_FOOT, skelVectors.get("left_foot"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_HIP, skelVectors.get("right_hip"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, skelVectors.get("right_knee"));
+            kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_FOOT, skelVectors.get("right_foot"));
+
+            String payload = "{ \"timestamp\": " + currentTime + ", " +
+                    "\"points\": { " +
+                    "\"head\": " + skelVectors.get("head") + ", " +
+                    "\"neck\": " + skelVectors.get("neck") + ", " +
+                    "\"left_shoulder\": " + skelVectors.get("left_shoulder") + ", " +
+                    "\"left_elbow\": " + skelVectors.get("left_elbow") + ", " +
+                    "\"left_hand\": " + skelVectors.get("left_hand") + ", " +
+                    "\"right_shoulder\": " + skelVectors.get("right_shoulder") + ", " +
+                    "\"right_elbow\": " + skelVectors.get("right_elbow") + ", " +
+                    "\"right_hand\": " + skelVectors.get("right_hand") + ", " +
+                    "\"torso\": " + skelVectors.get("torso") + ", " +
+                    "\"left_hip\": " + skelVectors.get("left_hip") + ", " +
+                    "\"left_knee\": " + skelVectors.get("left_knee") + ", " +
+                    "\"left_foot\": " + skelVectors.get("left_foot") + ", " +
+                    "\"right_hip\": " + skelVectors.get("right_hip") + ", " +
+                    "\"right_knee\": " + skelVectors.get("right_knee") + ", " +
+                    "\"right_foot\": " + skelVectors.get("right_foot") +
+                    "} }";
+
+            publisher.publish("dancer-state", payload);
+        }
+    }
+
+    protected class PublishImageRunnable implements Runnable {
+
+        protected long currentTime;
+
+        public PublishImageRunnable(long currentTime) {
+            this.currentTime = currentTime;
+        }
+
+        @Override
+        public void run() {
+            publisher.publish("dancer-image", Arrays.toString(kinect.depthImage().pixels));
+            lastImageTaken = currentTime;
+        }
+    }
 }
