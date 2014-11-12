@@ -99,10 +99,13 @@ public class Main extends PApplet {
     head if confidence of tracking is above threshold
     ----------------------------------------------------------------*/
     public void draw() {
+
         // update the camera
         kinect.update();
+
         // get Kinect data
         kinectDepth = kinect.depthImage();
+
         // draw depth image at coordinates (0,0)
         image(kinectDepth, 0, 0);
 
@@ -111,18 +114,23 @@ public class Main extends PApplet {
 
         // loop through each user to see if tracking
         for (int i = 0; i < userID.length; i++) {
+
             // if Kinect is tracking certain user then get joint vectors
             if (kinect.isTrackingSkeleton(userID[i])) {
+
                 // get confidence level that Kinect is tracking head
                 confidence = kinect.getJointPositionSkeleton(userID[i],
                         SimpleOpenNI.SKEL_HEAD, confidenceVector);
 
                 // if confidence of tracking is beyond threshold, then track user
                 if (confidence > confidenceLevel) {
+
                     // change draw color based on hand id#
                     stroke(0, 0, 255);
+
                     // fill the ellipse with the same color
                     fill(0, 255, 0);
+
                     // draw the rest of the body
                     drawSkeleton(userID[i]);
 
@@ -166,10 +174,10 @@ public class Main extends PApplet {
 
         long currentTime = System.currentTimeMillis();
 
-        // publish skeleton joints info
+        // publish skeleton joints info to redis
         taskExecutor.execute(new PublishRunnable(userId, currentTime));
 
-        // publish heat map image
+        // publish heat map image - disabled for latency atm
 //        if (currentTime - lastImageTaken >= 5000) {
 //            taskExecutor.execute(new PublishImageRunnable(currentTime));
 //        }
@@ -180,7 +188,9 @@ public class Main extends PApplet {
     userID and start pose detection.  Input is userID
     ----------------------------------------------------------------*/
     public void onNewUser(SimpleOpenNI curContext, int userId) {
+
         println("New User Detected - userId: " + userId);
+
         // start tracking of user id
         curContext.startTrackingSkeleton(userId);
     }
@@ -189,6 +199,7 @@ public class Main extends PApplet {
     Print when user is lost. Input is int userId of user lost
     ----------------------------------------------------------------*/
     public void onLostUser(SimpleOpenNI curContext, int userId) {
+
         // print user lost and user id
         println("User Lost - userId: " + userId);
     }
@@ -210,6 +221,7 @@ public class Main extends PApplet {
             this.userId = userId;
             this.currentTime = currentTime;
 
+            // set up map for each of the joints of interest
             skelVectors.put("head", new PVector());
             skelVectors.put("neck", new PVector());
             skelVectors.put("left_shoulder", new PVector());
@@ -230,6 +242,7 @@ public class Main extends PApplet {
         @Override
         public void run() {
 
+            // get skeletal position info into vectors held in map
             kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_HEAD, skelVectors.get("head"));
             kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_NECK, skelVectors.get("neck"));
             kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_LEFT_SHOULDER, skelVectors.get("left_shoulder"));
@@ -246,6 +259,7 @@ public class Main extends PApplet {
             kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_KNEE, skelVectors.get("right_knee"));
             kinect.getJointPositionSkeleton(userId, SimpleOpenNI.SKEL_RIGHT_FOOT, skelVectors.get("right_foot"));
 
+            // build JSON payload for skeletal info
             String payload = "{ \"timestamp\": " + currentTime + ", " +
                     "\"points\": { " +
                     "\"head\": " + skelVectors.get("head") + ", " +
@@ -265,6 +279,7 @@ public class Main extends PApplet {
                     "\"right_foot\": " + skelVectors.get("right_foot") +
                     "} }";
 
+            // publish to redis
             publisher.publish("dancer-state", payload);
         }
     }
