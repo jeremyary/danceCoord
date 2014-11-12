@@ -6,7 +6,9 @@ In short, we made music "music to the dancer" instead of making the dancer "danc
 
 We initially set out on OS X machines to find a way to interface with the Kinect. Doing so outside of Windows 7+ with the provided MS SDK turned out to be quite a challenge. We had hoped to find a way to do so with Python, but most available options we tried either failed to install properly or still required the native SDK underneath the covers. Ultimately, I was able to find a small Java class in the SimpleOpenNI documentation that seemed to indicate a possible solution, so I dug in.
 
-The best resource I found for getting SimpleOpenNI going on OS X was here: http://blog.nelga.com/setup-microsoft-kinect-on-mac-os-x-10-9-mavericks/
+The best resource I found for getting SimpleOpenNI going on OS X was here:
+
+http://blog.nelga.com/setup-microsoft-kinect-on-mac-os-x-10-9-mavericks/
 
 The prereq's that I already had going were xcode, command line tools, xquartz, cmake, mac ports, libtool, & libusb +universal.
 
